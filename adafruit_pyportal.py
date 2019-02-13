@@ -52,7 +52,7 @@ class PyPortal:
         try:
             self._backlight = pulseio.PWMOut(board.TFT_BACKLIGHT)
         except:
-            pass
+            self._backlight = None
         self.set_backlight(1.0)  # turn on backlight
 
         self._url = url
@@ -74,28 +74,36 @@ class PyPortal:
             self.neopix = None
         self.neo_status(0)
 
+        try:
+            os.stat(LOCALFILE)
+            self._uselocal = True
+        except OSError:
+            self._uselocal = False
+
         # Make ESP32 connection
         if self._debug:
             print("Init ESP32")
-        esp32_cs = DigitalInOut(microcontroller.pin.PB14)
+        esp32_cs = DigitalInOut(microcontroller.pin.PB14) # PB14
         esp32_ready = DigitalInOut(microcontroller.pin.PB16)
         esp32_gpio0 = DigitalInOut(microcontroller.pin.PB15)
         esp32_reset = DigitalInOut(microcontroller.pin.PB17)
         spi = busio.SPI(board.SCK, board.MOSI, board.MISO)
-        self._esp = adafruit_esp32spi.ESP_SPIcontrol(spi, esp32_cs, esp32_ready, esp32_reset, esp32_gpio0)
-        #self._esp._debug = 1
-        for _ in range(3): # retries
-            try:
-                print("ESP firmware:", self._esp.firmware_version)
-                break
-            except RuntimeError:
-                print("Retrying ESP32 connection")
-                time.sleep(1)
-                self._esp.reset()
-        else:
-            raise RuntimeError("Was not able to find ESP32")
 
-        requests.set_interface(self._esp)
+        if not self._uselocal:
+            self._esp = adafruit_esp32spi.ESP_SPIcontrol(spi, esp32_cs, esp32_ready, esp32_reset, esp32_gpio0)
+            #self._esp._debug = 1
+            for _ in range(3): # retries
+                try:
+                    print("ESP firmware:", self._esp.firmware_version)
+                    break
+                except RuntimeError:
+                    print("Retrying ESP32 connection")
+                    time.sleep(1)
+                    self._esp.reset()
+            else:
+                raise RuntimeError("Was not able to find ESP32")
+
+            requests.set_interface(self._esp)
 
         if self._debug:
             print("Init display")
@@ -200,10 +208,12 @@ class PyPortal:
         board.DISPLAY.wait_for_frame()
 
     def set_backlight(self, val):
-        if not self._backlight:
-            return
         val = max(0, min(1.0, val))
-        self._backlight.duty_cycle = int(val * 65535)
+        if self._backlight:
+            self._backlight.duty_cycle = int(val * 65535)
+        else:
+            board.DISPLAY.auto_brightness = False
+            board.DISPLAY.brightness = val
 
     def set_caption(self, caption_text, caption_position, caption_color):
         if self._debug:
@@ -231,6 +241,7 @@ class PyPortal:
                 string = string[:self._text_maxlen[index]]
             if self._text[index]:
                 # TODO: repalce this with a simple set_text() once that works well
+                """
                 items = []
                 while True:
                     try:
@@ -248,12 +259,20 @@ class PyPortal:
                 for g in items:
                     self.splash.append(g)
                 return
+                """
+                print("Replacing text area with :", string)
+                self._text[index].text = string
+                return
             if self._text_position[index]:  # if we want it placed somewhere...
+                print("Making text area with string:", string)
                 self._text[index] = TextArea(self._text_font, text=string)
                 self._text[index].color = self._text_color[index]
                 self._text[index].x = self._text_position[index][0]
                 self._text[index].y = self._text_position[index][1]
-                self.splash.append(self._text[index].group)
+                try:
+                    self.splash.append(self._text[index].group)
+                except AttributeError:
+                    self.splash.append(self._text[index])
 
     def neo_status(self, value):
         if self.neopix:
@@ -316,12 +335,9 @@ class PyPortal:
             print("Free mem: ", gc.mem_free())
 
         r = None
-        try:
-            os.stat(LOCALFILE)
+        if self._uselocal:
             print("*** USING LOCALFILE FOR DATA - NOT INTERNET!!! ***")
             r = fake_requests(LOCALFILE)
-        except OSError:
-            pass
 
         if not r:
             self.neo_status((0, 0, 100))
