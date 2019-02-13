@@ -241,10 +241,12 @@ class PyPortal:
             if self._text_maxlen[index]:
                 string = string[:self._text_maxlen[index]]
             if self._text[index]:
-                # TODO: repalce this with a simple set_text() once that works well
-                """
+                if not self._backlight:
+                    print("Replacing text area with :", string)
+                    self._text[index].text = string
+                    return
                 items = []
-                while True:
+                while True: # TODO: repalce this with a simple set_text() once that works well
                     try:
                         item = self.splash.pop()
                         if item == self._text[index].group:
@@ -259,11 +261,7 @@ class PyPortal:
                 self.splash.append(self._text[index].group)
                 for g in items:
                     self.splash.append(g)
-                return
-                """
-                print("Replacing text area with :", string)
-                self._text[index].text = string
-                return
+                return                
             if self._text_position[index]:  # if we want it placed somewhere...
                 print("Making text area with string:", string)
                 self._text[index] = TextArea(self._text_font, text=string)
